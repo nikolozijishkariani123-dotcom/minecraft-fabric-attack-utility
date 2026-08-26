@@ -10,26 +10,35 @@ import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
+import java.util.Random;
 
 public class AutoAttackFeature {
     private static long lastAttackTime = 0;
     private static long lastToggleTime = 0;
+    private static long lastAimUpdateTime = 0;
+    private static long lastPauseTime = 0;
+    private static boolean inPauseMode = false;
+    private static Random random = new Random();
+    private static double reactionTimeDelay = 0;
 
     public static void init() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player != null && client.world != null && ModConfig.toggleKey != 0) {
-                // Check if toggle key is pressed
+                // Check if toggle key is pressed with reaction time delay
                 if (InputUtil.isKeyPressed(client.getWindow().getHandle(), ModConfig.toggleKey)) {
                     long currentTime = System.currentTimeMillis();
-                    if (currentTime - lastToggleTime > 200) { // Debounce
+                    if (currentTime - lastToggleTime > 300) { // Increased debounce for natural feeling
                         ModConfig.enabled = !ModConfig.enabled;
                         if (client.player != null) {
-                            client.player.sendMessage(
-                                    net.minecraft.text.Text.literal("Attack Utility: " + (ModConfig.enabled ? "§aON" : "§cOFF")),
-                                    true
-                            );
+                            // Don't always show message (sometimes humans are subtle)
+                            if (random.nextDouble() > 0.2) {
+                                client.player.sendMessage(
+                                        net.minecraft.text.Text.literal("Attack Utility: " + (ModConfig.enabled ? "§aON" : "§cOFF")),
+                                        true
+                                );
+                            }
                         }
-                        lastToggleTime = currentTime;
+                        lastToggleTime = currentTime + random.nextInt(50); // Add random delay
                     }
                 }
             }
@@ -38,25 +47,36 @@ public class AutoAttackFeature {
                 // Check if aim assist toggle key is pressed
                 if (InputUtil.isKeyPressed(client.getWindow().getHandle(), ModConfig.aimAssistToggleKey)) {
                     long currentTime = System.currentTimeMillis();
-                    if (currentTime - lastToggleTime > 200) { // Debounce
+                    if (currentTime - lastToggleTime > 300) {
                         ModConfig.aimAssistEnabled = !ModConfig.aimAssistEnabled;
-                        if (client.player != null) {
+                        if (client.player != null && random.nextDouble() > 0.2) {
                             client.player.sendMessage(
                                     net.minecraft.text.Text.literal("Aim Assist: " + (ModConfig.aimAssistEnabled ? "§aON" : "§cOFF")),
                                     true
                             );
                         }
-                        lastToggleTime = currentTime;
+                        lastToggleTime = currentTime + random.nextInt(50);
                     }
                 }
             }
 
-            if (ModConfig.aimAssistEnabled && client.player != null && client.world != null) {
-                performAimAssist(client);
+            // Random pause intervals (human behavior)
+            if (ModConfig.enableRandomPauses) {
+                long currentTime = System.currentTimeMillis();
+                if (currentTime - lastPauseTime > random.nextInt(2000) + 1000) {
+                    inPauseMode = !inPauseMode;
+                    lastPauseTime = currentTime;
+                }
             }
 
-            if (ModConfig.enabled && client.player != null && client.world != null) {
-                tick(client);
+            if (!inPauseMode) {
+                if (ModConfig.aimAssistEnabled && client.player != null && client.world != null) {
+                    performAimAssist(client);
+                }
+
+                if (ModConfig.enabled && client.player != null && client.world != null) {
+                    tick(client);
+                }
             }
         });
     }
@@ -65,9 +85,16 @@ public class AutoAttackFeature {
         PlayerEntity player = client.player;
         if (player == null || client.world == null) return;
 
-        Entity target = findAimTarget(client);
-        if (target != null) {
-            aimAtEntity(player, target);
+        long currentTime = System.currentTimeMillis();
+        // Add reaction time delay
+        int reactionTime = ModConfig.reactionTimeMin + random.nextInt(ModConfig.reactionTimeMax - ModConfig.reactionTimeMin);
+        
+        if (currentTime - lastAimUpdateTime > reactionTime) {
+            Entity target = findAimTarget(client);
+            if (target != null && random.nextDouble() > 0.1) { // 10% chance to "miss" target temporarily
+                aimAtEntity(player, target);
+            }
+            lastAimUpdateTime = currentTime;
         }
     }
 
@@ -85,11 +112,15 @@ public class AutoAttackFeature {
             if (!entity.isAlive()) continue;
 
             double distance = player.distanceTo(entity);
+            // Add jitter to distance calculations
+            distance += (random.nextDouble() - 0.5) * ModConfig.jitterAmount;
+            
             if (distance > ModConfig.aimAssistDistance) continue;
 
-            // Check if entity is within FOV
+            // Check if entity is within FOV with jitter
             double angle = getAngleToEntity(player, entity);
-            if (angle > ModConfig.aimAssistFOV / 2.0) continue;
+            double fovWithJitter = ModConfig.aimAssistFOV + (random.nextDouble() - 0.5) * 10;
+            if (angle > fovWithJitter / 2.0) continue;
 
             if (distance < closestDistance || (distance == closestDistance && angle < closestAngle)) {
                 closestEntity = entity;
@@ -137,10 +168,19 @@ public class AutoAttackFeature {
         while (yawDifference > 180) yawDifference -= 360;
         while (yawDifference < -180) yawDifference += 360;
 
+        // Apply smoothness (slower, more human-like rotation)
+        float smoothness = (float) ModConfig.rotationSmoothness;
+        yawDifference *= smoothness;
+        pitchDifference *= smoothness;
+
         // Limit rotation to max angle
         float maxAngle = (float) ModConfig.aimAssistMaxAngle;
         yawDifference = Math.max(-maxAngle, Math.min(maxAngle, yawDifference));
         pitchDifference = Math.max(-maxAngle, Math.min(maxAngle, pitchDifference));
+
+        // Add jitter to rotations (human-like tremor)
+        yawDifference += (random.nextFloat() - 0.5f) * (float) ModConfig.jitterAmount;
+        pitchDifference += (random.nextFloat() - 0.5f) * (float) ModConfig.jitterAmount;
 
         player.setYaw(currentYaw + yawDifference);
         player.setPitch(currentPitch + pitchDifference);
@@ -148,12 +188,15 @@ public class AutoAttackFeature {
 
     private static void tick(MinecraftClient client) {
         long currentTime = System.currentTimeMillis();
-        if (currentTime - lastAttackTime < ModConfig.attackDelay) {
+        // Add random variance to attack delay
+        int delayVariance = ModConfig.attackDelay + random.nextInt(50) - 25;
+        
+        if (currentTime - lastAttackTime < delayVariance) {
             return;
         }
 
         Entity target = findTarget(client);
-        if (target != null) {
+        if (target != null && random.nextDouble() > 0.15) { // 15% chance to "miss" occasionally
             attackEntity(client, target);
             lastAttackTime = currentTime;
         }
@@ -163,7 +206,7 @@ public class AutoAttackFeature {
         PlayerEntity player = client.player;
         if (player == null || client.world == null) return null;
 
-        double range = 6.0; // Attack range
+        double range = 6.0;
         Entity closestEntity = null;
         double closestDistance = range;
 
@@ -173,8 +216,10 @@ public class AutoAttackFeature {
             if (!entity.isAlive()) continue;
 
             double distance = player.distanceTo(entity);
+            // Add jitter to distance
+            distance += (random.nextDouble() - 0.5) * ModConfig.jitterAmount;
+            
             if (distance < closestDistance) {
-                // Check if entity is in sight
                 if (isEntityInView(player, entity)) {
                     closestEntity = entity;
                     closestDistance = distance;
@@ -200,7 +245,7 @@ public class AutoAttackFeature {
         // Attack the entity
         client.interactionManager.attackEntity(player, target);
 
-        if (ModConfig.preferCrits) {
+        if (ModConfig.preferCrits && random.nextDouble() > 0.2) { // Don't always crit
             // Perform crit attack (jump while attacking)
             player.jump();
         }
