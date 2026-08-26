@@ -9,12 +9,31 @@ import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.world.RaycastContext;
+import org.lwjgl.glfw.GLFW;
 
 public class AutoAttackFeature {
     private static long lastAttackTime = 0;
 
     public static void init() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (client.player != null && client.world != null && ModConfig.toggleKey != 0) {
+                // Check if toggle key is pressed
+                if (InputUtil.isKeyPressed(client.getWindow().getHandle(), ModConfig.toggleKey)) {
+                    ModConfig.enabled = !ModConfig.enabled;
+                    if (client.player != null) {
+                        client.player.sendMessage(
+                                net.minecraft.text.Text.literal("Attack Utility: " + (ModConfig.enabled ? "§aON" : "§cOFF")),
+                                true
+                        );
+                    }
+                    try {
+                        Thread.sleep(200); // Debounce
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+
             if (ModConfig.enabled && client.player != null && client.world != null) {
                 tick(client);
             }
@@ -83,5 +102,11 @@ public class AutoAttackFeature {
             // Perform crit attack (jump while attacking)
             player.jump();
         }
+    }
+}
+
+class InputUtil {
+    public static boolean isKeyPressed(long window, int keyCode) {
+        return GLFW.glfwGetKey(window, keyCode) == GLFW.GLFW_PRESS;
     }
 }
