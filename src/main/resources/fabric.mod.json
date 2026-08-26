@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "attackutility",
+  "version": "${version}",
+  "name": "Attack Utility",
+  "description": "Auto-attack utility mod with GUI configuration",
+  "authors": [
+    "You"
+  ],
+  "contact": {
+    "homepage": "https://github.com/nikolozijishkariani123-dotcom/minecraft-fabric-attack-utility",
+    "sources": "https://github.com/nikolozijishkariani123-dotcom/minecraft-fabric-attack-utility"
+  },
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "com.example.attackutility.AttackUtilityMod"
+    ],
+    "client": [
+      "com.example.attackutility.client.AttackUtilityClientInit"
+    ]
+  },
+  "mixins": [
+    "attackutility.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21"
+  }
+}
